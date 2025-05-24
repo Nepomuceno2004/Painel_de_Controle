@@ -37,6 +37,10 @@
     "raspberry-pi-pico.cmakePath": "${HOME}/.pico-sdk/cmake/v3.28.6/bin/cmake",
     "raspberry-pi-pico.ninjaPath": "${HOME}/.pico-sdk/ninja/v1.12.1/ninja",
     "files.associations": {
-        "bootrom.h": "c"
+        "bootrom.h": "c",
+        "ssd1306.h": "c",
+        "buzzer.h": "c",
+        "adc.h": "c",
+        "stdlib.h": "c"
     }
 }

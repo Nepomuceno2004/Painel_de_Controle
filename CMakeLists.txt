@@ -31,6 +31,7 @@ include_directories(${CMAKE_SOURCE_DIR}/lib)
 add_executable(${PROJECT_NAME}  
         Painel_de_Controle.c 
         lib/ssd1306.c # Biblioteca para o display OLED
+        lib/buzzer.c
         )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR})
@@ -40,6 +41,7 @@ target_link_libraries(${PROJECT_NAME}
         hardware_gpio
         hardware_i2c
         hardware_adc
+        hardware_pwm
         FreeRTOS-Kernel 
         FreeRTOS-Kernel-Heap4
         )

@@ -2,6 +2,7 @@
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
 #include "lib/ssd1306.h"
+#include "lib/buzzer.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -9,10 +10,10 @@
 
 #define BOTAO_A 5
 #define BOTAO_B 6
-#define MAX_USUARIOS 10
 #define LED_PIN_GREEN 11
 #define LED_PIN_BLUE 12
 #define LED_PIN_RED 13
+#define BUZZER_PIN 21
 #define JOYSTICK_BTN_PIN 22
 
 SemaphoreHandle_t xContadorSemA;
@@ -23,6 +24,7 @@ SemaphoreHandle_t xResetSem;
 ssd1306_t ssd;
 uint16_t eventosProcessados = 0;
 uint32_t last_time;
+uint8_t MAX = 5;
 
 void vTaskReset(void *params)
 {
@@ -40,6 +42,10 @@ void vTaskReset(void *params)
 
             // Nenhum usuário logado → Azul
             gpio_put(LED_PIN_BLUE, true);
+
+            buzzer_play(BUZZER_PIN, 2000, 120);
+            vTaskDelay(pdMS_TO_TICKS(100)); // Pausa entre os dois beeps
+            buzzer_play(BUZZER_PIN, 2500, 120);
 
             if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
             {
@@ -74,52 +80,85 @@ void vTaskEntrada(void *params)
     while (true)
     {
         // Aguarda semáforo (um evento)
-        if (xSemaphoreTake(xContadorSemA, portMAX_DELAY) == pdTRUE && eventosProcessados < MAX_USUARIOS)
+        if (xSemaphoreTake(xContadorSemA, portMAX_DELAY) == pdTRUE)
         {
-            eventosProcessados++;
-
             gpio_put(LED_PIN_GREEN, false);
             gpio_put(LED_PIN_BLUE, false);
             gpio_put(LED_PIN_RED, false);
 
-            if (eventosProcessados < MAX_USUARIOS - 1)
+            if (eventosProcessados < MAX)
             {
-                // Usuários ativos de 1 até MAX-2 → Verde
-                gpio_put(LED_PIN_GREEN, true);
+                eventosProcessados++;
+
+                if (eventosProcessados < MAX - 1)
+                {
+                    // Usuários ativos de 1 até MAX-2 → Verde
+                    gpio_put(LED_PIN_GREEN, true);
+                }
+                else if (eventosProcessados == MAX - 1)
+                {
+                    // Apenas 1 vaga restante → Amarelo
+                    gpio_put(LED_PIN_GREEN, true);
+                    gpio_put(LED_PIN_RED, true);
+                }
+                else if (eventosProcessados == MAX)
+                {
+                    // Capacidade máxima → Vermelho
+                    gpio_put(LED_PIN_RED, true);
+                    buzzer_play(BUZZER_PIN, 3000, 150);
+                }
+
+                if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
+                {
+                    // Atualiza display com a nova contagem
+                    ssd1306_fill(&ssd, 0);
+                    sprintf(buffer, "Usuarios: %d", eventosProcessados);
+                    ssd1306_draw_string(&ssd, "Entrada ", 5, 10);
+                    ssd1306_draw_string(&ssd, "Detectada!", 5, 19);
+                    ssd1306_draw_string(&ssd, buffer, 5, 44);
+                    ssd1306_send_data(&ssd);
+                    printf("Tarefa 1 ativa\n");
+
+                    // Simula tempo de processamento
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+                    // Retorna à tela de espera
+                    ssd1306_fill(&ssd, 0);
+                    ssd1306_draw_string(&ssd, "Aguardando ", 5, 25);
+                    ssd1306_draw_string(&ssd, "  evento...", 5, 34);
+                    ssd1306_send_data(&ssd);
+
+                    xSemaphoreGive(xDisplayMutex);
+                }
             }
-            else if (eventosProcessados == MAX_USUARIOS - 1)
+            else
             {
-                // Apenas 1 vaga restante → Amarelo
-                gpio_put(LED_PIN_GREEN, true);
+                // Capacidade máxima - Vermelho
                 gpio_put(LED_PIN_RED, true);
-            }
-            else if (eventosProcessados == MAX_USUARIOS)
-            {
-                // Capacidade máxima → Vermelho
-                gpio_put(LED_PIN_RED, true);
-            }
+                buzzer_play(BUZZER_PIN, 3000, 150);
 
-            if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
-            {
-                // Atualiza display com a nova contagem
-                ssd1306_fill(&ssd, 0);
-                sprintf(buffer, "Usuarios: %d", eventosProcessados);
-                ssd1306_draw_string(&ssd, "Entrada ", 5, 10);
-                ssd1306_draw_string(&ssd, "Detectada!", 5, 19);
-                ssd1306_draw_string(&ssd, buffer, 5, 44);
-                ssd1306_send_data(&ssd);
-                printf("Tarefa 1 ativa\n");
+                if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
+                {
+                    // Atualiza display com a nova contagem
+                    ssd1306_fill(&ssd, 0);
+                    sprintf(buffer, "Usuarios: %d", eventosProcessados);
+                    ssd1306_draw_string(&ssd, "Espaco ", 5, 10);
+                    ssd1306_draw_string(&ssd, "Lotado!", 5, 19);
+                    ssd1306_draw_string(&ssd, buffer, 5, 44);
+                    ssd1306_send_data(&ssd);
+                    printf("Tarefa 1 ativa\n");
 
-                // Simula tempo de processamento
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    // Simula tempo de processamento
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-                // Retorna à tela de espera
-                ssd1306_fill(&ssd, 0);
-                ssd1306_draw_string(&ssd, "Aguardando ", 5, 25);
-                ssd1306_draw_string(&ssd, "  evento...", 5, 34);
-                ssd1306_send_data(&ssd);
+                    // Retorna à tela de espera
+                    ssd1306_fill(&ssd, 0);
+                    ssd1306_draw_string(&ssd, "Aguardando ", 5, 25);
+                    ssd1306_draw_string(&ssd, "  evento...", 5, 34);
+                    ssd1306_send_data(&ssd);
 
-                xSemaphoreGive(xDisplayMutex);
+                    xSemaphoreGive(xDisplayMutex);
+                }
             }
         }
     }
@@ -132,51 +171,83 @@ void vTaskSaida(void *params)
     while (true)
     {
         // Aguarda semáforo (um evento)
-        if (xSemaphoreTake(xContadorSemB, portMAX_DELAY) == pdTRUE && eventosProcessados > 0)
+        if (xSemaphoreTake(xContadorSemB, portMAX_DELAY) == pdTRUE)
         {
-            eventosProcessados--;
-
             gpio_put(LED_PIN_GREEN, false);
             gpio_put(LED_PIN_BLUE, false);
             gpio_put(LED_PIN_RED, false);
-            if (eventosProcessados == 0)
+
+            if (eventosProcessados > 0)
             {
-                // Nenhum usuário logado → Azul
+                eventosProcessados--;
+
+                if (eventosProcessados == 0)
+                {
+                    // Nenhum usuário logado → Azul
+                    gpio_put(LED_PIN_BLUE, true);
+                }
+                else if (eventosProcessados < MAX - 1)
+                {
+                    // Usuários ativos de 1 até MAX-2 → Verde
+                    gpio_put(LED_PIN_GREEN, true);
+                }
+                else if (eventosProcessados == MAX - 1)
+                {
+                    // Apenas 1 vaga restante → Amarelo
+                    gpio_put(LED_PIN_GREEN, true);
+                    gpio_put(LED_PIN_RED, true);
+                }
+
+                if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
+                {
+                    // Atualiza display com a nova contagem
+                    ssd1306_fill(&ssd, 0);
+                    sprintf(buffer, "Usuarios: %d", eventosProcessados);
+                    ssd1306_draw_string(&ssd, "Saida ", 5, 10);
+                    ssd1306_draw_string(&ssd, "Detectada!", 5, 19);
+                    ssd1306_draw_string(&ssd, buffer, 5, 44);
+                    ssd1306_send_data(&ssd);
+                    printf("Tarefa 2 ativa\n");
+
+                    // Simula tempo de processamento
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+                    // Retorna à tela de espera
+                    ssd1306_fill(&ssd, 0);
+                    ssd1306_draw_string(&ssd, "Aguardando ", 5, 25);
+                    ssd1306_draw_string(&ssd, "  evento...", 5, 34);
+                    ssd1306_send_data(&ssd);
+
+                    xSemaphoreGive(xDisplayMutex);
+                }
+            }
+            else
+            {
+                // vazio - azul
                 gpio_put(LED_PIN_BLUE, true);
-            }
-            else if (eventosProcessados < MAX_USUARIOS - 1)
-            {
-                // Usuários ativos de 1 até MAX-2 → Verde
-                gpio_put(LED_PIN_GREEN, true);
-            }
-            else if (eventosProcessados == MAX_USUARIOS - 1)
-            {
-                // Apenas 1 vaga restante → Amarelo
-                gpio_put(LED_PIN_GREEN, true);
-                gpio_put(LED_PIN_RED, true);
-            }
 
-            if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
-            {
-                // Atualiza display com a nova contagem
-                ssd1306_fill(&ssd, 0);
-                sprintf(buffer, "Usuarios: %d", eventosProcessados);
-                ssd1306_draw_string(&ssd, "Saida ", 5, 10);
-                ssd1306_draw_string(&ssd, "Detectada!", 5, 19);
-                ssd1306_draw_string(&ssd, buffer, 5, 44);
-                ssd1306_send_data(&ssd);
-                printf("Tarefa 2 ativa\n");
+                if (xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
+                {
+                    // Atualiza display com a nova contagem
+                    ssd1306_fill(&ssd, 0);
+                    sprintf(buffer, "Usuarios: %d", eventosProcessados);
+                    ssd1306_draw_string(&ssd, "Espaco ", 5, 10);
+                    ssd1306_draw_string(&ssd, "Vazio!", 5, 19);
+                    ssd1306_draw_string(&ssd, buffer, 5, 44);
+                    ssd1306_send_data(&ssd);
+                    printf("Tarefa 2 ativa\n");
 
-                // Simula tempo de processamento
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    // Simula tempo de processamento
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-                // Retorna à tela de espera
-                ssd1306_fill(&ssd, 0);
-                ssd1306_draw_string(&ssd, "Aguardando ", 5, 25);
-                ssd1306_draw_string(&ssd, "  evento...", 5, 34);
-                ssd1306_send_data(&ssd);
+                    // Retorna à tela de espera
+                    ssd1306_fill(&ssd, 0);
+                    ssd1306_draw_string(&ssd, "Aguardando ", 5, 25);
+                    ssd1306_draw_string(&ssd, "  evento...", 5, 34);
+                    ssd1306_send_data(&ssd);
 
-                xSemaphoreGive(xDisplayMutex);
+                    xSemaphoreGive(xDisplayMutex);
+                }
             }
         }
     }
@@ -245,6 +316,8 @@ int main()
 
     // Nenhum usuário logado → Azul
     gpio_put(LED_PIN_BLUE, true);
+
+    buzzer_init(BUZZER_PIN);
 
     // Inicializa I2C e display OLED
     initDisplay(&ssd);
